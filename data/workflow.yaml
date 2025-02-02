@@ -1,45 +1,56 @@
 correlation:
-  key:
-    eventA: "$.transaction_id"
-    eventB: "$.txn_id"
-    eventC: "$.transaction_id"
+  eventA:
+    key:
+      "$.transaction_id"
+  eventB:
+    key: "$.txn_id"
+  eventC:
+    key: "$.transaction_id"
 
 events:
   eventA:
-    type: "PaymentInitiated"
+    matchKey:
+      type: "PaymentInitiated"
   eventB:
-    type: "PaymentAuthorized"
+    matchKey:
+     type: "PaymentAuthorized"
   eventC:
-    type: "PaymentSettled"
+    matchKey:
+     type: "PaymentSettled"
 
-flow:
-  conditions:
-    settledInTime:
-      type: "timingCondition"
-      event: "eventC"
-      within: "30m"
-      startFrom: "firstEvent"
-
+triggers:
   logCase:
     requires:
-      - eventA
+      exact:
+        - eventA
     action:
       type: "httpPost"
 
   successCase:
     requires:
-      - eventA
-      - eventB
-      - eventC
-    condition: settledInTime
+      exact:
+        - eventA
+        - eventB
+        - eventC
+    condition: >
+      (trigger, ctx) => {
+        const firstTime = ctx.sequence[0].time;
+        const checkTime = ctx.events.eventC?.time ?? trigger.time;
+        return duration(checkTime, firstTime) <= minutes(30);
+      }
     action:
       type: "httpPost"
 
   errorCase:
     requires:
-      - eventA
-      - eventB
-    condition:
-      not: settledInTime
+      atLeast:
+        - eventA
+        - eventB
+    condition: >
+      (trigger, ctx) => {
+        const firstTime = ctx.sequence[0].time;
+        const checkTime = ctx.events.eventC?.time ?? trigger.time;
+        return duration(checkTime, firstTime) > minutes(30);
+      }
     action:
       type: "createAlert"

@@ -4,18 +4,63 @@ correlation:
 
 events:
   message:
+    matchAll:
 
-
-flow:
-  conditions:
-    settledInTime:
-      type: "timingCondition"
-      event: "eventC"
-      within: "30m"
-      startFrom: "firstEvent"
-
-  logCase:
+triggers:
+  fromNewUser:
     requires:
-      - eventA
+      exact:
+       - message
+    condition: >
+      (trigger, ctx) => {
+        const VAGUELY_OKAY_WEBSITES = [
+          "github.com",
+          "bitbucket.com",
+          "stackoverflow.com",
+          "pastebin.com",
+          "kaggle.com",
+          "mit.edu",
+          "usc.edu"
+        ];
+
+        const joinDate = msg.member?.joinedAt?.getTime() / 1000;
+        const hourInMs = 1000 * 60 * 60;
+        const content = ctx.events.message.content;
+
+        const isRecentJoin = joinDate === null ||
+          (Date.now() - joinDate * 1000) <= hourInMs;
+
+        const isSuspiciousMessage =
+          (content.includes("http") &&
+           !VAGUELY_OKAY_WEBSITES.some(site => content.includes(site))) ||
+          ctx.events.message.messageEveryone;
+
+        return isRecentJoin && isSuspiciousMessage;
+      }
+    action:
+      type: "httpPost"
+
+  mentionsRoadmaps:
+    requires:
+      exact:
+        - message
+    condition: >
+      (trigger, ctx) => {
+        const content = ctx.events.message.content.toLowerCase();
+        return content.includes("roadmap") ||
+               content.includes("road map");
+      }
+    action:
+      type: "httpPost"
+
+  isHoneypot:
+    requires:
+      exact:
+        - message
+    condition: >
+      (trigger, ctx) => {
+        return ctx.events.message.author.id != 1091681853603324047 &&
+          ctx.events.message.channel_id == 889466095810011137;
+      }
     action:
       type: "httpPost"

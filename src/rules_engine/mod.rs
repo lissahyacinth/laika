@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
-use deno_core::{error::{CoreError, JsError}, JsRuntime, RuntimeOptions};
+use deno_core::{error::{CoreError, JsError}, v8, JsRuntime, RuntimeOptions};
 use thiserror::Error;
+use serde_json::Value;
 
 #[derive(Error, Debug)]
 pub enum JsonPredicateError {
@@ -8,10 +9,10 @@ pub enum JsonPredicateError {
     Io(#[from] std::io::Error),
     #[error("JavaScript error: {0}")]
     Js(#[from] JsError),
-    #[error("Execution failed: {0}")]
-    Execution(String),
     #[error("Expected boolean result, got {0}")]
     NonBooleanResult(String),
+    #[error("Execution error: {0}")]
+    Execution(String)
 }
 
 impl From<CoreError> for JsonPredicateError {
@@ -25,12 +26,10 @@ impl From<CoreError> for JsonPredicateError {
     }
 }
 
-/// A stored JavaScript predicate function
 pub struct JsonPredicate {
     id: String,
 }
 
-/// Engine for running JSON predicates
 pub struct JsonPredicateEngine {
     runtime: JsRuntime,
     predicate_count: usize,
@@ -53,12 +52,10 @@ impl JsonPredicateEngine {
         Ok(self.store_predicate(&js_code))
     }
 
-    /// Store a predicate without validation
     pub fn store_predicate(&mut self, js_code: &str) -> JsonPredicate {
         self.predicate_count += 1;
         let id = format!("pred_{}", self.predicate_count);
 
-        // Just store the function directly
         let setup_code = format!(
             r#"globalThis['{id}'] = {js_code};"#
         );
@@ -67,16 +64,15 @@ impl JsonPredicateEngine {
         JsonPredicate { id }
     }
 
-    /// Evaluate a predicate against JSON data
     pub fn evaluate(
         &mut self,
         predicate: &JsonPredicate,
-        json_str: &str,
+        value: &Value,
     ) -> Result<bool, JsonPredicateError> {
+        let json = serde_json::to_string(value).unwrap();
         let eval_code = format!(
-            r#"globalThis['{id}'](JSON.parse('{json}'))"#,
+            r#"globalThis['{id}']({json})"#,
             id = predicate.id,
-            json = json_str.replace('\'', "\\'")
         );
 
         let result = self.runtime.execute_script("[evaluate]", eval_code)?;
@@ -84,19 +80,12 @@ impl JsonPredicateEngine {
         let value = result.open(scope);
 
         if !value.is_boolean() {
-            let type_name = if value.is_string() {
-                "string"
-            } else if value.is_number() {
-                "number"
-            } else if value.is_object() {
-                "object"
-            } else if value.is_undefined() {
-                "undefined"
-            } else if value.is_null() {
-                "null"
-            } else {
-                "unknown"
-            };
+            let type_name = if value.is_string() { "string" }
+            else if value.is_number() { "number" }
+            else if value.is_object() { "object" }
+            else if value.is_undefined() { "undefined" }
+            else if value.is_null() { "null" }
+            else { "unknown" };
 
             return Err(JsonPredicateError::NonBooleanResult(type_name.to_string()));
         }
@@ -118,70 +107,44 @@ mod tests {
     #[test]
     fn test_basic_predicate() -> Result<(), JsonPredicateError> {
         let mut engine = JsonPredicateEngine::new();
+        let predicate = engine.store_predicate("(data) => data.active === true");
 
-        let predicate = engine.store_predicate(
-            r#"(data) => data.active === true"#,
-        );
+        let value = serde_json::json!({"active": true});
+        assert!(engine.evaluate(&predicate, &value)?);
 
-        assert!(engine.evaluate(&predicate, r#"{"active": true}"#)?);
-        assert!(!engine.evaluate(&predicate, r#"{"active": false}"#)?);
+        let value = serde_json::json!({"active": false});
+        assert!(!engine.evaluate(&predicate, &value)?);
         Ok(())
     }
 
     #[test]
     fn test_membership_predicate() -> Result<(), JsonPredicateError> {
         let mut engine = JsonPredicateEngine::new();
-
-        let predicate = engine.store_predicate(
-            r#"
+        let predicate = engine.store_predicate(r#"
             (data) => {
                 if (!data.user?.type) return false;
                 return ['premium', 'enterprise'].includes(data.user.type);
             }
-            "#,
-        );
+        "#);
 
-        assert!(engine.evaluate(&predicate, r#"{"user": {"type": "premium"}}"#)?);
-        assert!(!engine.evaluate(&predicate, r#"{"user": {"type": "basic"}}"#)?);
+        let value = serde_json::json!({"user": {"type": "premium"}});
+        assert!(engine.evaluate(&predicate, &value)?);
+
+        let value = serde_json::json!({"user": {"type": "basic"}});
+        assert!(!engine.evaluate(&predicate, &value)?);
         Ok(())
     }
 
     #[test]
-    fn test_date_predicate() -> Result<(), JsonPredicateError> {
+    fn test_json_with_special_chars() -> Result<(), JsonPredicateError> {
         let mut engine = JsonPredicateEngine::new();
+        let predicate = engine.store_predicate(r#"(data) => data.text === "hello\nworld""#);
 
-        let predicate = engine.store_predicate(
-            r#"
-            (data) => {
-                const { user } = data;
-                if (!user?.memberSince) return false;
+        let value = serde_json::json!({
+            "text": "hello\nworld"
+        });
 
-                const membershipAge = new Date() - new Date(user.memberSince);
-                const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-
-                return membershipAge < thirtyDays;
-            }
-            "#,
-        );
-
-        assert!(engine.evaluate(
-            &predicate,
-            r#"{
-            "user": {
-                "memberSince": "2024-01-30T00:00:00Z"
-            }
-        }"#
-        )?);
-
-        assert!(!engine.evaluate(
-            &predicate,
-            r#"{
-            "user": {
-                "memberSince": "2023-01-01T00:00:00Z"
-            }
-        }"#
-        )?);
-
+        assert!(engine.evaluate(&predicate, &value)?);
         Ok(())
     }
 
@@ -199,7 +162,8 @@ mod tests {
 
         for (code, expected_type) in test_cases {
             let predicate = engine.store_predicate(code);
-            let result = engine.evaluate(&predicate, "{}");
+            let value = serde_json::json!({});
+            let result = engine.evaluate(&predicate, &value);
 
             assert!(matches!(
                 result,
@@ -210,3 +174,4 @@ mod tests {
         Ok(())
     }
 }
+

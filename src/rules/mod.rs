@@ -105,7 +105,6 @@ pub struct EventProcessorGroup {
 pub struct EventRule {
     name: String,
     condition: Option<Condition>,
-    condition_inverted: bool,
     requires: Vec<String>,
 }
 
