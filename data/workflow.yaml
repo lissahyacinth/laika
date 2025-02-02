@@ -1,0 +1,45 @@
+correlation:
+  key:
+    eventA: "$.transaction_id"
+    eventB: "$.txn_id"
+    eventC: "$.transaction_id"
+
+events:
+  eventA:
+    type: "PaymentInitiated"
+  eventB:
+    type: "PaymentAuthorized"
+  eventC:
+    type: "PaymentSettled"
+
+flow:
+  conditions:
+    settledInTime:
+      type: "timingCondition"
+      event: "eventC"
+      within: "30m"
+      startFrom: "firstEvent"
+
+  logCase:
+    requires:
+      - eventA
+    action:
+      type: "httpPost"
+
+  successCase:
+    requires:
+      - eventA
+      - eventB
+      - eventC
+    condition: settledInTime
+    action:
+      type: "httpPost"
+
+  errorCase:
+    requires:
+      - eventA
+      - eventB
+    condition:
+      not: settledInTime
+    action:
+      type: "createAlert"

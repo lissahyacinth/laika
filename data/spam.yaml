@@ -1,0 +1,21 @@
+correlation:
+  key:
+    eventA: "$.message_id"
+
+events:
+  message:
+
+
+flow:
+  conditions:
+    settledInTime:
+      type: "timingCondition"
+      event: "eventC"
+      within: "30m"
+      startFrom: "firstEvent"
+
+  logCase:
+    requires:
+      - eventA
+    action:
+      type: "httpPost"
