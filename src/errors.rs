@@ -1,3 +1,6 @@
+use crate::predicate_engine::JsonPredicateError;
+use crate::template::error::TemplateError;
+use deno_core::error::CoreError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -26,6 +29,18 @@ pub enum LaikaError {
     #[error("Field {0} not found in data at path {1}")]
     FieldNotFound(String, String),
 
+    #[error("{0}")]
+    JsonPathError(String),
+
+    #[error("{0}")]
+    JsonError(String),
+
+    #[error("{0}")]
+    RegexError(String),
+
+    #[error("{0}")]
+    TemplateError(String),
+
     #[error("Invalid Input")]
     InvalidInput,
 
@@ -34,6 +49,9 @@ pub enum LaikaError {
 
     #[error("{0}")]
     ChannelError(String),
+
+    #[error("Error while evaluating rule: {0}")]
+    RuleEvaluationError(String),
 
     #[error("Missing Task: {0}")]
     MissingTask(String),
@@ -75,3 +93,12 @@ macro_rules! laika_error_from {
 laika_error_from!(rocksdb::Error, Generic);
 laika_error_from!(bincode::Error, Generic);
 laika_error_from!(zmq::Error, Generic);
+laika_error_from!(capnp::Error, Generic);
+laika_error_from!(CoreError, Generic);
+laika_error_from!(JsonPredicateError, JsonError);
+
+impl From<TemplateError> for LaikaError {
+    fn from(value: TemplateError) -> Self {
+        LaikaError::TemplateError(value.to_string())
+    }
+}

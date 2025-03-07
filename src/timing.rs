@@ -2,11 +2,11 @@ use crate::broker::{CorrelationId, EventExpiry};
 use crate::errors::{LaikaError, LaikaResult};
 use fs2::FileExt;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Seek, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use time::OffsetDateTime;
 
-/// TimingExpiry tracks time windows for correlated events, enabling rules like
+/// TimingExpiry tracks time windows for correlated events, enabling config like
 /// "if A and B don't occur within 30 minutes, do X". Events are linked by a
 /// correlation ID and persist across service restarts.
 pub struct TimingExpiry {
@@ -50,7 +50,7 @@ impl TimingExpiry {
         match self.expiry.take() {
             None => Err(LaikaError::Generic("No expiry to acknowledge".to_string())),
             Some(expiry) => {
-                if expiry.0 > OffsetDateTime::now_utc() {
+                if expiry.expires_at > OffsetDateTime::now_utc() {
                     self.expiry = Some(expiry); // Put it back
                     Err(LaikaError::Generic("Expiry not yet met".to_string()))
                 } else {
@@ -68,12 +68,12 @@ impl TimingExpiry {
         let mut expiries = self.read_expiries()?;
         let original_len = expiries.len();
 
-        expiries.retain(|exp| exp.1 != correlation_id);
+        expiries.retain(|exp| exp.correlation_id != correlation_id);
 
         if expiries.len() == original_len {
             return Err(LaikaError::Generic(format!(
                 "No expiry found for correlation ID: {}",
-                correlation_id.0
+                correlation_id
             )));
         }
 
@@ -132,9 +132,10 @@ mod tests {
     }
 
     fn create_test_event(minutes_from_now: i64) -> EventExpiry {
-        EventExpiry(
+        EventExpiry::new(
             OffsetDateTime::now_utc() + time::Duration::minutes(minutes_from_now),
-            CorrelationId("test-id".to_string()),
+            "test-id".to_string(),
+            "ExampleEventRule".to_string(),
         )
     }
 

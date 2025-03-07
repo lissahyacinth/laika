@@ -1,6 +1,7 @@
 use crate::errors::LaikaResult;
+use crate::event::event_serde::CorrelatedEventCapnpBatch;
 use crate::event::CorrelatedEvent;
-use rocksdb::{OptimisticTransactionDB, Options, Transaction};
+use rocksdb::{IteratorMode, OptimisticTransactionDB, Options, Transaction};
 use std::path::{Path, PathBuf};
 
 pub struct StorageKV {
@@ -63,6 +64,23 @@ impl StorageKV {
         })
     }
 
+    /// Remove all entries
+    pub fn delete_all_keys(&self) -> Result<(), rocksdb::Error> {
+        let keys: Vec<Vec<u8>> = self
+            .events_by_correlation_id
+            .iterator(IteratorMode::Start)
+            .map(|item| item.unwrap().0.to_vec())
+            .collect();
+        for key in keys {
+            self.events_by_correlation_id.delete(key)?;
+        }
+        self.events_by_correlation_id
+            .compact_range(None::<&[u8]>, None::<&[u8]>);
+        self.events_by_correlation_id.flush()?;
+        tracing::debug!("All keys have been removed from KV");
+        Ok(())
+    }
+
     pub fn start_transaction(&self) -> Transaction<OptimisticTransactionDB> {
         self.events_by_correlation_id.transaction()
     }
@@ -74,7 +92,7 @@ impl StorageKV {
     ) -> LaikaResult<Vec<CorrelatedEvent>> {
         match txn.get(correlation_id)? {
             None => Ok(Vec::new()),
-            Some(events) => bincode::deserialize(&events).map_err(|e| e.into()),
+            Some(events) => CorrelatedEventCapnpBatch::from_bytes(events.as_slice())?.try_into(),
         }
     }
 
@@ -83,20 +101,25 @@ impl StorageKV {
         txn: &Transaction<OptimisticTransactionDB>,
         event: CorrelatedEvent,
     ) -> LaikaResult<Vec<CorrelatedEvent>> {
+        tracing::debug!("Writing Correlated Event to KV");
         let correlation_id = event.correlation_id.clone();
-        let existing_events = txn.get(correlation_id.0.as_str())?;
+        let existing_events = txn.get(correlation_id.as_str())?;
         let updated_events = match existing_events {
             Some(existing) => {
-                let mut existing_events: Vec<CorrelatedEvent> = bincode::deserialize(&existing)?;
-                existing_events.push(event);
-                existing_events
+                tracing::debug!("Event existed beforehand - loading in {:?}", &existing);
+                let mut existing_event_batch: CorrelatedEventCapnpBatch =
+                    CorrelatedEventCapnpBatch::from_bytes(existing.as_slice())?;
+                existing_event_batch.push_event(event)?;
+                existing_event_batch.try_into()?
             }
             None => vec![event],
         };
+        tracing::debug!("Received Updated Events");
         txn.put(
-            correlation_id.0.as_str(),
-            bincode::serialize(&updated_events)?,
+            correlation_id.as_str(),
+            bincode::serialize(&updated_events).expect("Serialization of events failed"),
         )?;
+        tracing::debug!("Wrote new event to KV");
         Ok(updated_events)
     }
 }

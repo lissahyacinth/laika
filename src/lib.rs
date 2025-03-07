@@ -1,19 +1,26 @@
 use crate::errors::LaikaResult;
 use action::EventAction;
 
-mod action;
+pub mod action;
 mod broker;
+pub mod config;
 mod consts;
 mod errors;
-mod event;
-mod flow;
-mod flow_definition;
-mod parser;
+pub mod event;
+pub mod event_handler;
+pub mod event_processor;
+mod event_schema_capnp;
+mod matcher;
+mod predicate_engine;
 mod rules;
-mod rules_engine;
-mod storage;
+pub mod storage;
+mod submitters;
+mod template;
 mod timing;
 mod utils;
+
+pub use event_processor::processor::EventProcessor;
+
 // Building out a CQRS pattern effectively.
 // The full architecture here will be
 // [Subscribers] => [Broker] => [Receivers]
@@ -22,12 +29,11 @@ mod utils;
 async fn handle_actions(targets: Vec<String>, actions: Vec<EventAction>) -> LaikaResult<()> {
     for action in actions {
         match action {
-            EventAction::Alert(_) => {}
             EventAction::Emit(target) => {
                 // Write to the target.
                 // Initially write to a local file as a simple outbox pattern.
             }
-            EventAction::DelayedCheck(_) => {}
+            EventAction::ScheduleWakeup(_) => {}
             _ => {}
         }
     }

@@ -1,0 +1,27 @@
+correlation:
+  message:
+    key: "$.id"
+
+events:
+  message:
+    matchAll: {}
+
+triggers:
+  exampleTrigger:
+    requires:
+      exact:
+        - message
+    filterAndExtract: >
+      (trigger, ctx) => {
+        if (trigger.event.type !== 'test') return null;
+        return {
+          id: trigger.event.id,
+          data: trigger.event.data
+        };
+      }
+    action:
+      target: targets.localRabbitMq
+      payload:
+        id: "${{ id }}"
+        type: "test_processed"
+        output_data: "${{ data }}"

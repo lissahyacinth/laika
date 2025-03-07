@@ -1,17 +1,24 @@
 correlation:
-  key:
-    eventA: "$.message_id"
+  message:
+    key: "$.message_id"
+
+targets:
+  local_rabbitmq:
+    type: "rabbitmq"
+    host: "localhost"
+    port: 5672
+
 
 events:
   message:
     matchAll:
 
 triggers:
-  fromNewUser:
+  maybeSpam:
     requires:
       exact:
        - message
-    condition: >
+    filterAndExtract >
       (trigger, ctx) => {
         const VAGUELY_OKAY_WEBSITES = [
           "github.com",
@@ -25,7 +32,7 @@ triggers:
 
         const joinDate = msg.member?.joinedAt?.getTime() / 1000;
         const hourInMs = 1000 * 60 * 60;
-        const content = ctx.events.message.content;
+        const content = ctx.events.message[0].content;
 
         const isRecentJoin = joinDate === null ||
           (Date.now() - joinDate * 1000) <= hourInMs;
@@ -38,29 +45,38 @@ triggers:
         return isRecentJoin && isSuspiciousMessage;
       }
     action:
-      type: "httpPost"
+      type: "postToQueue"
+      target: local_rabbitmq
+      routing:
+        topic: event.spam
 
   mentionsRoadmaps:
     requires:
       exact:
         - message
-    condition: >
+    filterAndExtract >
       (trigger, ctx) => {
-        const content = ctx.events.message.content.toLowerCase();
+        const content = ctx.events.message[0].content.toLowerCase();
         return content.includes("roadmap") ||
                content.includes("road map");
       }
     action:
-      type: "httpPost"
+      type: "postToQueue"
+      target: local_rabbitmq
+      routing:
+        topic: event.roadmap
 
   isHoneypot:
     requires:
       exact:
         - message
-    condition: >
+    filterAndExtract >
       (trigger, ctx) => {
-        return ctx.events.message.author.id != 1091681853603324047 &&
-          ctx.events.message.channel_id == 889466095810011137;
+        return ctx.events.message[0].author.id != 1091681853603324047 &&
+          ctx.events.message[0].channel_id == 889466095810011137;
       }
     action:
-      type: "httpPost"
+      type: "postToQueue"
+      target: local_rabbitmq
+      routing:
+        topic: event.honeypot

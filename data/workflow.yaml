@@ -1,7 +1,6 @@
 correlation:
   eventA:
-    key:
-      "$.transaction_id"
+    key: "$.transaction_id"
   eventB:
     key: "$.txn_id"
   eventC:
@@ -32,10 +31,11 @@ triggers:
         - eventA
         - eventB
         - eventC
-    condition: >
+    filterAndExtract >
       (trigger, ctx) => {
         const firstTime = ctx.sequence[0].time;
-        const checkTime = ctx.events.eventC?.time ?? trigger.time;
+        const latestC = ctx.events.eventC?.[ctx.events.eventC.length - 1];
+        const checkTime = latestC?.time ?? trigger.time;
         return duration(checkTime, firstTime) <= minutes(30);
       }
     action:
@@ -46,10 +46,15 @@ triggers:
       atLeast:
         - eventA
         - eventB
-    condition: >
+    timing:
+      from: "30m"
+      check_every: "30m"
+      until: "4h"
+    filterAndExtract >
       (trigger, ctx) => {
         const firstTime = ctx.sequence[0].time;
-        const checkTime = ctx.events.eventC?.time ?? trigger.time;
+        const latestC = ctx.events.eventC?.[ctx.events.eventC.length - 1];
+        const checkTime = latestC?.time ?? trigger.time;
         return duration(checkTime, firstTime) > minutes(30);
       }
     action:
