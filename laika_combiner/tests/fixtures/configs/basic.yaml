@@ -1,0 +1,36 @@
+connections:
+  local_messages:
+    type: file
+    path: "./single_event.jsonl"
+  local_outbox:
+    type: file
+    path: "./single_event_output.jsonl"
+
+events:
+  message:
+    from: local_messages
+    matchAll: {}
+
+correlation:
+  message:
+    key: "$.id"
+
+triggers:
+  exampleTrigger:
+    requires:
+      exact:
+        - message
+    filterAndExtract: >
+      (trigger, ctx) => {
+        if (trigger.event.type !== 'test') return null;
+        return {
+          id: trigger.event.id,
+          data: trigger.event.data
+        };
+      }
+    action:
+      target: targets.local_outbox
+      payload:
+        id: "${{ id }}"
+        type: "test_processed"
+        output_data: "${{ data }}"

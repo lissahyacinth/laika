@@ -24,14 +24,13 @@ Build requirements are Rust and CapnpProto.
 1. Save this file as "config.yaml":
 
 ```yaml
-sources:
+connections:
   local_file:
-    type: File
+    type: file
     path: "./sample_events.jsonl"
-
-targets:
   console_output:
     type: stdout
+
 
 events:
   user_login:
@@ -44,12 +43,12 @@ triggers:
       exact:
         - user_login
     action:
-      target: targets.console_output
+      target: connections.console_output
       payload:
         event: "new_login"
         userId: "${{ trigger.event.user_id }}"
         loginTime: "${{ trigger.event.timestamp }}"
-        deviceInfo: "${{ trigger.event.device || 'unknown' }}"
+        deviceInfo: "${{ trigger.event.device || 'unknown' }}"**
 ```
 
 2. Create a sample input file named "sample_events.jsonl":
@@ -73,15 +72,15 @@ You should see the following output:
 
 ## Concepts
 
-### Sources
-Sources define where your input events come from. Laika can connect to various event sources including files, message queues, and HTTP endpoints.
+### Connections
+Sources define where your input events come from, and your output events are sent. Laika can connect to various event sources including files, message queues, and HTTP endpoints.
 
 ```yaml
-sources:
-  rabbitmq_input:
-    type: RabbitMQ
-    connection: "amqp://guest:guest@localhost:5672"
-    queue: "incoming_events"
+connections:
+  rabbitmq_events:
+    rabbitmq:
+        connection: "amqp://guest:guest@localhost:5672"
+        queue: "events"
 ```
 
 ### Event Typing
@@ -119,7 +118,8 @@ correlation:
     key: "$.transaction_id"
 ```
 
-This configuration correlates events by their transaction ID (even though eventB uses a different field name), allowing you to make decisions based on groups of related events.
+This configuration correlates events by their transaction ID (even though eventB uses a different field name), 
+allowing you to make decisions based on groups of related events.
 
 ### Rule Requirements & Conditions
 
@@ -175,7 +175,7 @@ triggers:
       exact:
         - login
     action:
-      target: targets.welcomeNotification
+      target: connections.welcomeNotification
       payload: 
         userId: "$.user_id"
         message: "Welcome to our platform!"
@@ -211,7 +211,7 @@ triggers:
         };
       }
     action:
-      target: targets.analytics
+      target: connections.analytics
       payload: 
         metric: "conversion"
         userId: "${{ userId }}"
@@ -288,7 +288,7 @@ triggers:
       exact:
         - payment
     action:
-      target: targets.paymentProcessor
+      target: connections.paymentProcessor
       payload:
         # Trigger information
         triggerType: "${{ trigger.type }}"
@@ -319,7 +319,7 @@ triggers:
       from: "24h"
       check_every: "24h"
     action:
-      target: targets.reportingSystem
+      target: connections.reportingSystem
       payload:
         # Trigger information
         triggerType: "${{ trigger.type }}"  # Will be "timer_expired"
@@ -378,7 +378,7 @@ triggers:
         };
       }
     action:
-      target: targets.notificationService
+      target: connections.notificationService
       payload:
         userId: "${{ userId }}"
         message: "Don't forget to check out our latest offers! You've been browsing for ${{ elapsedTime }} minutes."
@@ -389,7 +389,7 @@ When a rule's condition function returns a non-null value, Laika sends a payload
 
 ```yaml
 action:
-  target: targets.notificationSystem
+  target: connections.notificationSystem
   payload:
     user: "${{ userId }}"
     message: "Thanks for your purchase of ${{ purchaseAmount }}!"
@@ -402,18 +402,18 @@ The variables in `${{ }}` are resolved using the data returned from the conditio
 Targets define where actions send their results. Laika supports multiple output destinations:
 
 ```yaml
-targets:
+connections:
   notifications:
-    type: RabbitMQ
-    connection: "amqp://guest:guest@localhost:5672"
-    queue: "notifications"
+    rabbitmq:
+        connection: "amqp://guest:guest@localhost:5672"
+        queue: "notifications"
   
   auditLog:
-    type: HTTP
-    url: "https://api.example.com/audit"
-    headers:
-      Content-Type: "application/json"
-      Authorization: "Bearer ${ENV_TOKEN}"
+    http:
+        url: "https://api.example.com/audit"
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer ${ENV_TOKEN}"
 ```
 
 ## Performance and Scaling
@@ -428,40 +428,39 @@ For high-volume scenarios, distribute events across multiple Laika instances bas
 
 ## Connectors (WARN: This doesn't work yet)
 
-Laika supports these connectors:
+Laika supports these connections:
 
 ### RabbitMQ
 ```yaml
-sources:
+connections:
   rabbitmq_input:
-    type: RabbitMQ
-    connection: "amqp://guest:guest@localhost:5672"
-    queue: "incoming_events"
-    prefetch: 100  # Optional: number of messages to prefetch
+    rabbitmq:
+        connection: "amqp://guest:guest@localhost:5672"
+        queue: "incoming_events"
+        prefetch: 100  # Optional: number of messages to prefetch
 ```
 
 ### HTTP
 ```yaml
-targets:
+connections:
   api_endpoint:
-    type: HTTP
-    url: "https://api.example.com/events"
-    method: "POST"  # Optional: defaults to POST
-    headers:        # Optional
-      Content-Type: "application/json"
-      Authorization: "Bearer ${API_TOKEN}"
-    retry:          # Optional
-      attempts: 3
-      backoff: "exponential"
+    http:
+        url: "https://api.example.com/events"
+        method: "POST"  # Optional: defaults to POST
+        headers:        # Optional
+          Content-Type: "application/json"
+          Authorization: "Bearer ${API_TOKEN}"
+        retry:          # Optional
+          attempts: 3
+          backoff: "exponential"
 ```
 
 ### File
 ```yaml
-sources:
+connections:
   local_file:
-    type: File
-    path: "./input.jsonl"
-    watch: true  # Optional: continue watching file for new content
+    file:
+        path: "./input.jsonl"
 ```
 
 More connectors will be added in future releases.
