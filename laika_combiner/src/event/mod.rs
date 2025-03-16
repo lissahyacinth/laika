@@ -141,6 +141,7 @@ pub struct NonCorrelatedEvent {
     pub(crate) data: Value,
 }
 
+#[derive(Debug)]
 pub enum Trigger {
     ReceivedEvent(Event),
     TimerExpired(EventExpiry),

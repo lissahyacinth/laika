@@ -1,7 +1,7 @@
 use crate::errors::{LaikaError, LaikaResult};
 use crate::event::{CorrelatedEvent, NonCorrelatedEvent};
 use crate::event_schema_capnp;
-use crate::event_schema_capnp::{correlated_event, non_correlated_event};
+use crate::event_schema_capnp::{correlated_event, correlated_event_batch, non_correlated_event};
 use capnp::message::{Builder, HeapAllocator};
 use time::OffsetDateTime;
 
@@ -12,6 +12,7 @@ pub struct NonCorrelatedEventCapnp {
     pub data: Vec<u8>, // Serialized JSON
 }
 
+#[derive(Clone)]
 pub struct CorrelatedEventCapnp {
     pub received: i64, // Timestamp in ms since epoch
     pub correlation_id: String,
@@ -19,6 +20,7 @@ pub struct CorrelatedEventCapnp {
     pub data: Vec<u8>, // Serialized JSON
 }
 
+#[derive(Clone)]
 pub struct CorrelatedEventCapnpBatch {
     events: Vec<CorrelatedEventCapnp>,
 }
@@ -116,14 +118,11 @@ impl TryFrom<NonCorrelatedEventCapnp> for NonCorrelatedEvent {
 
 // Reading/Writing to Capnp
 impl NonCorrelatedEventCapnp {
-    pub fn write_capnp(&self) -> LaikaResult<()> {
-        let mut message = Builder::new_default();
-        let mut event = message.init_root::<non_correlated_event::Builder>();
+    pub fn write_capnp(&self, mut event: non_correlated_event::Builder) {
         event.set_received(self.received);
         event.set_event_id(&self.event_id);
         event.set_event_type(&self.event_type);
         event.set_data(&self.data);
-        Ok(())
     }
 
     pub fn read_capnp(reader: non_correlated_event::Reader) -> LaikaResult<Self> {
@@ -142,13 +141,11 @@ impl NonCorrelatedEventCapnp {
 }
 
 impl CorrelatedEventCapnp {
-    pub fn write_capnp(&self, mut builder: Builder<HeapAllocator>) -> LaikaResult<()> {
-        let mut event = builder.init_root::<correlated_event::Builder>();
+    pub fn write_capnp(&self, mut event: correlated_event::Builder) {
         event.set_received(self.received);
         event.set_correlation_id(&self.correlation_id);
         event.set_event_type(&self.event_type);
         event.set_data(&self.data);
-        Ok(())
     }
 
     pub fn read_capnp(reader: correlated_event::Reader) -> LaikaResult<Self> {
@@ -185,9 +182,17 @@ impl CorrelatedEventCapnpBatch {
         Self::read_capnp(batch_reader)
     }
 
-    fn write_capnp(&self, mut builder: Builder<HeapAllocator>) -> LaikaResult<()> {
-        let mut batch = builder.init_root::<event_schema_capnp::correlated_event_batch::Builder>();
-        let mut events_list = batch.reborrow().init_events(self.events.len() as u32);
+    pub fn to_bytes(&self) -> LaikaResult<Vec<u8>> {
+        let mut message = Builder::new_default();
+        self.write_capnp(&mut message)?;
+        let mut output = Vec::new();
+        capnp::serialize::write_message(&mut output, &message)?;
+        Ok(output)
+    }
+
+    fn write_capnp(&self, builder: &mut Builder<HeapAllocator>) -> LaikaResult<()> {
+        let event_batch = builder.init_root::<correlated_event_batch::Builder>();
+        let mut events_list = event_batch.init_events(self.events.len() as u32);
 
         for (i, event) in self.events.iter().enumerate() {
             let mut event_builder = events_list.reborrow().get(i as u32);
@@ -201,7 +206,7 @@ impl CorrelatedEventCapnpBatch {
     }
 
     fn read_capnp(reader: event_schema_capnp::correlated_event_batch::Reader) -> LaikaResult<Self> {
-        let events_list = reader.get_events().unwrap();
+        let events_list = reader.get_events()?;
         let mut events = Vec::with_capacity(events_list.len() as usize);
 
         for i in 0..events_list.len() {

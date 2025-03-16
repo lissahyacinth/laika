@@ -18,7 +18,7 @@ correlation:
 triggers:
   exampleTrigger:
     requires:
-      exact:
+      at_least:
         - message
     filterAndExtract: >
       (trigger, ctx) => {
@@ -29,7 +29,7 @@ triggers:
         };
       }
     action:
-      target: targets.local_outbox
+      target: local_outbox
       payload:
         id: "${{ id }}"
         type: "test_processed"

@@ -67,11 +67,12 @@ impl EventMatchBuilder {
             .into_iter()
             .map(|(event_type, match_pattern)| {
                 let event_source = match_pattern.from.clone();
-                EventMatchPattern::try_from(match_pattern).map(|mp| {
-                    EventTypeDefinition::new(event_source, mp, event_type)
-                })
+                EventMatchPattern::try_from(match_pattern)
+                    .map(|mp| EventTypeDefinition::new(event_source, mp, event_type))
             })
             .collect::<LaikaResult<Vec<EventTypeDefinition>>>()?;
-        Ok(EventTypeDefinitions { event_match_rules })
+        Ok(EventTypeDefinitions {
+            type_definitions: event_match_rules,
+        })
     }
 }

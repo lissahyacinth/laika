@@ -1606,6 +1606,8 @@ dependencies = [
  "laika_combiner",
  "serde_yaml",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

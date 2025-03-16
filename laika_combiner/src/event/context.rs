@@ -8,6 +8,7 @@ use std::collections::HashMap;
 /// The content around a given event trigger, *not* including the trigger.  
 ///
 /// Events provided in sequence are ordered upon EventContext creation.
+#[derive(Debug)]
 pub struct EventContext {
     sequence: Vec<Event>,
     events: HashMap<String, Vec<Event>>, // EventType -> Events

@@ -1,6 +1,7 @@
 use crate::connections::{EventSubmitter, MessagingError};
 use async_trait::async_trait;
 
+#[derive(Debug)]
 pub struct StdoutSubmitter {}
 
 impl StdoutSubmitter {

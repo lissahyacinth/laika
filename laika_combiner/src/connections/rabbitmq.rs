@@ -2,6 +2,7 @@ use crate::connections::{EventSubmitter, MessagingError};
 use async_trait::async_trait;
 use lapin::{Connection, ConnectionProperties};
 
+#[derive(Debug)]
 pub struct RabbitMqConnection {
     channel: lapin::Channel,
 }

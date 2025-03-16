@@ -47,10 +47,7 @@ impl TryFrom<&EventProcessorYamlSpec> for EventProcessorConfig {
                 .map(|(event_type, correlation_builder)| (event_type, correlation_builder.key))
                 .collect::<HashMap<EventType, String>>(),
         );
-        let event_matcher = value
-                .events
-                .clone()
-                .build()?;
+        let event_matcher = value.events.clone().build()?;
         let event_triggers: HashMap<EventType, EventTrigger> = value
             .triggers
             .clone()
@@ -61,11 +58,13 @@ impl TryFrom<&EventProcessorYamlSpec> for EventProcessorConfig {
                     .map(|trigger_config| (event_type, trigger_config))
             })
             .collect::<LaikaResult<HashMap<EventType, EventTrigger>>>()?;
+
         Ok(EventProcessorConfigBuilder::new()
+            .with_connections(value.connections.clone())
             .with_correlation(event_correlation)
             .with_event_matcher(event_matcher)
             .with_triggers(event_triggers)
-            .build())
+            .build()?)
     }
 }
 
@@ -104,7 +103,7 @@ impl TimingConfigBuilder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TimingConfig {
     from: Duration,
     check_every: Option<Duration>,

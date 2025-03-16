@@ -43,7 +43,7 @@ triggers:
       exact:
         - user_login
     action:
-      target: connections.console_output
+      target: console_output
       payload:
         event: "new_login"
         userId: "${{ trigger.event.user_id }}"
@@ -57,7 +57,7 @@ triggers:
 {"event_type": "login", "user_id": "user123", "timestamp": "2023-03-15T14:30:00Z", "device": "mobile"}
 {"event_type": "page_view", "user_id": "user123", "timestamp": "2023-03-15T14:32:00Z", "page": "/products"}
 {"event_type": "button_click", "user_id": "user123", "timestamp": "2023-03-15T14:33:00Z", "element_id": "add-to-cart"}
-```
+```ar
 
 3. Run Laika with (WARN: This doesn't work yet):
 
@@ -175,7 +175,7 @@ triggers:
       exact:
         - login
     action:
-      target: connections.welcomeNotification
+      target: welcomeNotification
       payload: 
         userId: "$.user_id"
         message: "Welcome to our platform!"
@@ -211,7 +211,7 @@ triggers:
         };
       }
     action:
-      target: connections.analytics
+      target: analytics
       payload: 
         metric: "conversion"
         userId: "${{ userId }}"
@@ -288,7 +288,7 @@ triggers:
       exact:
         - payment
     action:
-      target: connections.paymentProcessor
+      target: paymentProcessor
       payload:
         # Trigger information
         triggerType: "${{ trigger.type }}"
@@ -319,7 +319,7 @@ triggers:
       from: "24h"
       check_every: "24h"
     action:
-      target: connections.reportingSystem
+      target: reportingSystem
       payload:
         # Trigger information
         triggerType: "${{ trigger.type }}"  # Will be "timer_expired"
@@ -378,7 +378,7 @@ triggers:
         };
       }
     action:
-      target: connections.notificationService
+      target: notificationService
       payload:
         userId: "${{ userId }}"
         message: "Don't forget to check out our latest offers! You've been browsing for ${{ elapsedTime }} minutes."
@@ -389,7 +389,7 @@ When a rule's condition function returns a non-null value, Laika sends a payload
 
 ```yaml
 action:
-  target: connections.notificationSystem
+  target: notificationSystem
   payload:
     user: "${{ userId }}"
     message: "Thanks for your purchase of ${{ purchaseAmount }}!"

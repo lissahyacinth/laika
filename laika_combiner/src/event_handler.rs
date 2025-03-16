@@ -1,5 +1,5 @@
 use crate::action::EventAction;
-use crate::broker::{EventExpiry};
+use crate::broker::EventExpiry;
 use crate::errors::LaikaResult;
 use crate::event::context::EventContext;
 use crate::event::{CorrelatedEvent, Event, RawEvent, Trigger};
@@ -41,13 +41,14 @@ fn handle_correlated_parsed_event(
 pub fn handle_raw_event(
     processors: &mut [EventProcessor],
     storage_kv: &mut StorageKV,
+    event_source: &str, // Name of connector that provides the event
     raw_event: RawEvent,
 ) -> LaikaResult<Vec<EventAction>> {
     let mut event_actions: Vec<EventAction> = vec![];
     for processor in processors {
         let span = tracing::span!(tracing::Level::TRACE, "Processing event against processor");
         let _enter = span.enter();
-        for parsed_event in processor.parse_event(raw_event.clone())? {
+        for parsed_event in processor.parse_event(event_source, raw_event.clone())? {
             // Start a transaction to write the event to the database for the correlation id.
             // Retrieve events from the database for the correlation id.
             // This will block other writers until this is finished.

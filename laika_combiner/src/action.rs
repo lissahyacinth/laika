@@ -6,7 +6,7 @@ pub struct DelayedCheck {
     pub until: OffsetDateTime,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EmitAction {
     // TODO: Verify this target actually exists before allowing emitting to it.
     pub target: String,
@@ -27,7 +27,7 @@ impl EmitAction {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum EventAction {
     Emit(EmitAction),
     ScheduleWakeup(EventExpiry),

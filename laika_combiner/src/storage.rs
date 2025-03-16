@@ -106,20 +106,18 @@ impl StorageKV {
         let existing_events = txn.get(correlation_id.as_str())?;
         let updated_events = match existing_events {
             Some(existing) => {
-                tracing::debug!("Event existed beforehand - loading in {:?}", &existing);
                 let mut existing_event_batch: CorrelatedEventCapnpBatch =
                     CorrelatedEventCapnpBatch::from_bytes(existing.as_slice())?;
                 existing_event_batch.push_event(event)?;
-                existing_event_batch.try_into()?
+                existing_event_batch
             }
-            None => vec![event],
+            None => CorrelatedEventCapnpBatch::try_from(vec![event])?,
         };
-        tracing::debug!("Received Updated Events");
         txn.put(
             correlation_id.as_str(),
-            bincode::serialize(&updated_events).expect("Serialization of events failed"),
+            updated_events.to_bytes()?,
         )?;
         tracing::debug!("Wrote new event to KV");
-        Ok(updated_events)
+        Ok(Vec::try_from(updated_events)?)
     }
 }

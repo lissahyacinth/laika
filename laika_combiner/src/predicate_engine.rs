@@ -70,8 +70,6 @@ impl JsonPredicateEngine {
         let trigger_json = serde_json::to_string(trigger).unwrap();
         let context_json = serde_json::to_string(context).unwrap();
 
-        tracing::info!("Saving {}", trigger_json);
-
         let eval_code = format!(
             r#"globalThis['{id}']({trigger_json}, {context_json})"#,
             id = predicate.id,

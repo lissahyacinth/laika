@@ -3,8 +3,10 @@ use crate::connections::rabbitmq::RabbitMqConnection;
 use crate::connections::stdout::StdoutSubmitter;
 use crate::errors::{LaikaError, LaikaResult};
 use async_trait::async_trait;
+use futures::StreamExt;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use thiserror::Error;
@@ -54,13 +56,14 @@ pub struct RoutingConfig {
 }
 
 #[async_trait]
-pub trait EventSubmitter: Send + Sync {
+pub trait EventSubmitter: Send + Sync + Debug {
     async fn submit(&self, payload: serde_json::Value) -> Result<(), MessagingError>;
 }
 
 #[async_trait]
-pub trait EventReceiver: Send + Sync {
-    async fn receive_one(&self) -> Result<Option<serde_json::Value>, MessagingError>;
+pub trait EventReceiver: Send + Sync + Debug {
+    async fn receive_one(&self)
+        -> Result<Option<(serde_json::Value, AckCallback)>, MessagingError>;
 }
 
 pub async fn create_submitter(
@@ -100,9 +103,15 @@ pub async fn create_receiver(
     }
 }
 
+#[derive(Debug)]
 pub struct Connections {
     receivers: HashMap<String, Box<dyn EventReceiver>>,
     submitters: HashMap<String, Box<dyn EventSubmitter>>,
+}
+
+/// Immediately resolvable AckCallback.
+pub fn noop_ack_callback() -> AckCallback {
+    Box::new(|| Box::pin(std::future::ready(Ok(()))))
 }
 
 pub type AckCallback =
@@ -110,12 +119,14 @@ pub type AckCallback =
 
 impl Connections {
     /// Create a Connection object from available connections, as well as named receivers and targets
-    pub async fn new(
-        receivers: Vec<String>,
-        targets: Vec<String>,
-        connections: HashMap<String, ConnectionConfig>,
-    ) -> LaikaResult<Self> {
-        todo!()
+    pub fn new(
+        receivers: HashMap<String, Box<dyn EventReceiver>>,
+        submitters: HashMap<String, Box<dyn EventSubmitter>>,
+    ) -> Self {
+        Self {
+            receivers,
+            submitters,
+        }
     }
 
     /// Submit a single message to a target
@@ -132,7 +143,19 @@ impl Connections {
     }
 
     /// Receive a batch of messages from available connections
-    pub async fn receive(&self) -> LaikaResult<Vec<(serde_json::Value, AckCallback)>> {
-        todo!()
+    /// Returns a Vec of (Payload, Message Source, Callback)
+    pub async fn receive(&self) -> LaikaResult<Vec<(serde_json::Value, String, AckCallback)>> {
+        futures::stream::iter(&self.receivers)
+            .filter_map(|(source, receiver)| async move {
+                match receiver.receive_one().await {
+                    Ok(Some((value, callback))) => Some(Ok((value, source.to_string(), callback))),
+                    Ok(None) => None,
+                    Err(e) => Some(Err(LaikaError::Generic(format!("{}", e.to_string())))),
+                }
+            })
+            .collect::<Vec<LaikaResult<(serde_json::Value, String, AckCallback)>>>()
+            .await
+            .into_iter()
+            .collect()
     }
 }

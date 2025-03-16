@@ -20,7 +20,13 @@ pub fn process_file(processor: EventProcessor, jsonl_file: PathBuf) -> Vec<Value
     let mut outputs: Vec<Value> = vec![];
     for line in lines {
         let raw_event = RawEvent::new(serde_json::from_str::<Value>(&line).unwrap());
-        match handle_raw_event(processors.as_mut_slice(), &mut storage_kv, raw_event) {
+        // local_messages is from the basic config
+        match handle_raw_event(
+            processors.as_mut_slice(),
+            &mut storage_kv,
+            "local_messages",
+            raw_event,
+        ) {
             Ok(actions) => {
                 for action in actions {
                     if let EventAction::Emit(e) = action {

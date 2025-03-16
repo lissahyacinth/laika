@@ -1,7 +1,9 @@
-use crate::connections::{EventReceiver, EventSubmitter, MessagingError, RoutingConfig};
+use crate::connections::{
+    noop_ack_callback, AckCallback, EventReceiver, EventSubmitter, MessagingError, RoutingConfig,
+};
 use async_trait::async_trait;
 use serde_json::Value;
-use std::fs::{File};
+use std::fs::File;
 use std::path::Path;
 use tokio::fs::File as TokioFile;
 use tokio::io::{
@@ -9,6 +11,7 @@ use tokio::io::{
 };
 use tokio::sync::Mutex;
 
+#[derive(Debug)]
 pub struct FileEventQueue {
     file_path: String,
     reader: Mutex<TokioBufReader<TokioFile>>,
@@ -54,7 +57,7 @@ impl EventSubmitter for FileEventQueue {
 
 #[async_trait]
 impl EventReceiver for FileEventQueue {
-    async fn receive_one(&self) -> Result<Option<Value>, MessagingError> {
+    async fn receive_one(&self) -> Result<Option<(Value, AckCallback)>, MessagingError> {
         let mut reader = self.reader.lock().await;
         let mut line = String::new();
         let bytes_read = reader.read_line(&mut line).await?;
@@ -62,6 +65,6 @@ impl EventReceiver for FileEventQueue {
             return Err(MessagingError::StreamFinished);
         }
         let value: Value = serde_json::from_str(line.trim())?;
-        Ok(Some(value))
+        Ok(Some((value, noop_ack_callback())))
     }
 }

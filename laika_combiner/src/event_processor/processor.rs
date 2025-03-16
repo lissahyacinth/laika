@@ -36,9 +36,16 @@ impl EventProcessor {
     }
 
     /// Parse a Raw Event into all Matching Events
-    pub(crate) fn parse_event(&self, raw_event: RawEvent) -> LaikaResult<Vec<Event>> {
+    pub(crate) fn parse_event(
+        &self,
+        event_source: &str,
+        raw_event: RawEvent,
+    ) -> LaikaResult<Vec<Event>> {
         let mut matched_events: Vec<Event> = Vec::new();
-        for event_type in self.event_matcher.match_message(raw_event.get_data())? {
+        for event_type in self
+            .event_matcher
+            .match_message(event_source, raw_event.get_data())?
+        {
             matched_events.push(
                 raw_event.clone().parse(
                     event_type.clone(),
@@ -97,7 +104,6 @@ impl EventProcessor {
                         )))
                     }
                 }
-
                 RuleResult::RequirementNotMet { .. } => {}
             }
         }

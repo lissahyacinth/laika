@@ -1,7 +1,10 @@
 pub mod builder;
 
 use crate::broker::CorrelationId;
-use crate::connections::{create_receiver, create_submitter, ConnectionConfig, EventReceiver, EventSubmitter, MessagingError};
+use crate::connections::{
+    create_receiver, create_submitter, ConnectionConfig, Connections, EventReceiver,
+    EventSubmitter, MessagingError,
+};
 use crate::errors::{LaikaError, LaikaResult};
 use crate::event::{EventLike, RawEvent};
 use crate::matcher::{EventType, EventTypeDefinitions};
@@ -10,7 +13,7 @@ use crate::rules::{EventRule, Requirement};
 use crate::EventProcessor;
 use builder::{ActionConfig, TimingConfig};
 use futures::stream::{self, StreamExt};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const DEFAULT_PREDICATE: &str = r#"(trigger, ctx) => {
   const result = {
@@ -45,7 +48,7 @@ const DEFAULT_PREDICATE: &str = r#"(trigger, ctx) => {
   return hasEvents ? result : null;
 }"#;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EventCorrelation {
     event_rules: HashMap<EventType, String>,
 }
@@ -73,7 +76,7 @@ impl EventCorrelation {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EventTrigger {
     requirement: Requirement,
     filter_and_extract: Option<String>, // JS Compatible Condition
@@ -121,7 +124,7 @@ impl EventRuleDefinition {
 }
 
 pub struct EventProcessorConfigBuilder {
-    connectors: HashMap<String, ConnectionConfig>,
+    connections: HashMap<String, ConnectionConfig>,
     correlation: Option<EventCorrelation>,
     event_matcher: Option<EventTypeDefinitions>,
     triggers: Option<HashMap<EventType, EventTrigger>>,
@@ -130,15 +133,15 @@ pub struct EventProcessorConfigBuilder {
 impl EventProcessorConfigBuilder {
     pub fn new() -> Self {
         Self {
-            connectors: HashMap::default(),
+            connections: HashMap::default(),
             correlation: None,
             event_matcher: None,
             triggers: None,
         }
     }
 
-    pub fn with_connectors(mut self, connectors: HashMap<String, ConnectionConfig>) -> Self {
-        self.connectors = connectors;
+    pub fn with_connections(mut self, connections: HashMap<String, ConnectionConfig>) -> Self {
+        self.connections = connections;
         self
     }
 
@@ -157,28 +160,58 @@ impl EventProcessorConfigBuilder {
         self
     }
 
-    pub fn build(self) -> EventProcessorConfig {
-        let mut receiver_configs: HashMap<String, ConnectionConfig> = HashMap::new();
-        let mut target_configs: HashMap<String, ConnectionConfig> = HashMap::new();
-        let event_matcher = self
-            .event_matcher
-            .unwrap_or(EventTypeDefinitions::default());
+    pub fn build(self) -> LaikaResult<EventProcessorConfig> {
+        // Default event matcher if not provided
+        let event_matcher = self.event_matcher.unwrap_or_default();
 
-        // Find Event Matcher types to determine what should be in Receivers.
+        // Default triggers to empty HashMap if not provided
+        let triggers = self.triggers.unwrap_or_default();
 
-        EventProcessorConfig {
+        let get_connection =
+            |name: &str, connection_type: &str| -> LaikaResult<(String, ConnectionConfig)> {
+                let name_string = name.to_string();
+                self.connections
+                    .get(name)
+                    .ok_or_else(|| {
+                        LaikaError::Generic(format!(
+                            "Connection {} listed as a {} but not provided",
+                            name, connection_type
+                        ))
+                    })
+                    .map(|config| (name_string, config.clone()))
+            };
+
+        let receiver_configs = event_matcher
+            .receivers()
+            .into_iter()
+            .map(|source_name| get_connection(&source_name, "source"))
+            .collect::<LaikaResult<HashMap<String, ConnectionConfig>>>()?;
+
+        let target_names: HashSet<String> = triggers
+            .values()
+            .map(|trigger| trigger.action.target.clone())
+            .collect();
+
+        let target_configs = target_names
+            .into_iter()
+            .map(|target_name| get_connection(&target_name, "target"))
+            .collect::<LaikaResult<HashMap<String, ConnectionConfig>>>()?;
+
+        let correlation_rules = self
+            .correlation
+            .unwrap_or_else(|| EventCorrelation::new(HashMap::new()));
+
+        Ok(EventProcessorConfig {
             receiver_configs,
             target_configs,
-            correlation_rules: self
-                .correlation
-                .unwrap_or(EventCorrelation::new(HashMap::new())),
+            correlation_rules,
             event_matcher,
-            triggers: self.triggers.unwrap_or(HashMap::new()),
-        }
+            triggers,
+        })
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EventProcessorConfig {
     receiver_configs: HashMap<String, ConnectionConfig>,
     target_configs: HashMap<String, ConnectionConfig>,
@@ -206,10 +239,12 @@ impl EventProcessorConfig {
         rules
     }
 
-    pub async fn targets(&self) -> Result<Vec<(String, Box<dyn EventSubmitter>)>, MessagingError> {
+    async fn targets(&self) -> Result<Vec<(String, Box<dyn EventSubmitter>)>, MessagingError> {
         stream::iter(self.target_configs.clone())
             .then(|(target_name, target_config)| async move {
-            create_submitter(target_config).await.and_then(|submitter| Ok((target_name, submitter)))
+                create_submitter(target_config)
+                    .await
+                    .and_then(|submitter| Ok((target_name, submitter)))
             })
             .collect::<Vec<Result<(String, Box<dyn EventSubmitter>), MessagingError>>>()
             .await
@@ -217,15 +252,24 @@ impl EventProcessorConfig {
             .collect()
     }
 
-    pub async fn receivers(&self) -> Result<Vec<(String, Box<dyn EventReceiver>)>, MessagingError> {
+    async fn receivers(&self) -> Result<Vec<(String, Box<dyn EventReceiver>)>, MessagingError> {
         stream::iter(self.receiver_configs.clone())
             .then(|(receiver_name, receiver_config)| async move {
-                create_receiver(receiver_config).await.and_then(|submitter| Ok((receiver_name, submitter)))
+                create_receiver(receiver_config)
+                    .await
+                    .and_then(|submitter| Ok((receiver_name, submitter)))
             })
             .collect::<Vec<Result<(String, Box<dyn EventReceiver>), MessagingError>>>()
             .await
             .into_iter()
             .collect()
+    }
+
+    pub async fn connections(&self) -> Result<Connections, MessagingError> {
+        Ok(Connections::new(
+            self.receivers().await?.into_iter().collect(),
+            self.targets().await?.into_iter().collect(),
+        ))
     }
 
     pub fn build(self) -> EventProcessor {

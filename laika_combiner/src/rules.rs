@@ -6,6 +6,7 @@ use crate::predicate_engine::{JsonPredicate, JsonPredicateEngine};
 use time::OffsetDateTime;
 use tracing::error;
 
+#[derive(Debug)]
 pub enum RuleResult {
     /// The rule's requirements were met and its condition evaluated to true
     ConditionSatisfied {
@@ -32,7 +33,7 @@ impl From<RequirementConfig> for Requirement {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Requirement {
     AtLeast(Vec<String>),
     Exactly(Vec<String>),
@@ -158,6 +159,7 @@ impl EventRule {
         if !self.valid_correlation(trigger, context) {
             return Err(LaikaError::InvalidEventGroup);
         }
+        tracing::debug!("Evaluating rule with Trigger {:?} and Context {:?}", trigger, context);
         if let Some(met_at) = self.when_met_requirements(trigger, context) {
             if let Some(condition_result) = self.meets_condition(engine, trigger, context)? {
                 Ok(RuleResult::ConditionSatisfied {
